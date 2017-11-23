@@ -12,19 +12,27 @@ import (
 
 const INSTANCE = "prod0"
 
-func HelloWorld(histogram *prometheus.HistogramVec, counter *prometheus.CounterVec, gauge *prometheus.GaugeVec) http.HandlerFunc {
+func HelloWorld(histogram *prometheus.HistogramVec, counter *prometheus.CounterVec, gauge *prometheus.GaugeVec, summary *prometheus.SummaryVec) http.HandlerFunc {
 	return func (res http.ResponseWriter, req *http.Request) {
 		timer := prometheus.NewTimer(histogram.With(prometheus.Labels{
 			"status": strconv.Itoa(http.StatusOK),
 			"instance": INSTANCE}))
 
+		summaryTimer := prometheus.NewTimer(summary.With(prometheus.Labels{
+			"status": strconv.Itoa(http.StatusOK),
+			"instance": INSTANCE}))
+
 		defer func() {
 
-			timer.ObserveDuration()
 			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
 
+			runtime.ReadMemStats(&m)
 			gauge.With(prometheus.Labels{"instance":INSTANCE}).Set(float64(m.Alloc / 1024))
+
+			counter.With(prometheus.Labels{"instance":INSTANCE}).Inc()
+
+			timer.ObserveDuration()
+			summaryTimer.ObserveDuration()
 		}()
 
 		log.Println("Hello World!")
@@ -36,7 +44,7 @@ func HelloWorld(histogram *prometheus.HistogramVec, counter *prometheus.CounterV
 
 func main() {
 	histogram := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "hello_world_request_time",
+		Name: "hello_world_response_time",
 		Help: "Time taken to return hello world",
 	}, []string{"status", "instance"})
 
@@ -50,11 +58,17 @@ func main() {
 		Help: "Head used memory footprint in kilobytes",
 	}, []string{"instance"})
 
+	summary := prometheus.NewSummaryVec(prometheus.SummaryOpts{
+		Name: "yet_another_response_time_tracker",
+		Help: "Summary of request response time",
+	}, []string{"status", "instance"})
+
 	prometheus.Register(histogram)
 	prometheus.Register(counter)
 	prometheus.Register(gauge)
+	prometheus.Register(summary)
 
 	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/hello", HelloWorld(histogram, counter, gauge))
+	http.HandleFunc("/hello", HelloWorld(histogram, counter, gauge, summary))
 	log.Fatal(http.ListenAndServe(":3000", nil))
 }
