@@ -6,7 +6,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
-	"time"
 	"strconv"
 	"runtime"
 )
@@ -15,16 +14,13 @@ const INSTANCE = "prod0"
 
 func HelloWorld(histogram *prometheus.HistogramVec, counter *prometheus.CounterVec, gauge *prometheus.GaugeVec) http.HandlerFunc {
 	return func (res http.ResponseWriter, req *http.Request) {
-		start := time.Now()
-
+		timer := prometheus.NewTimer(histogram.With(prometheus.Labels{
+			"status": strconv.Itoa(http.StatusOK),
+			"instance": INSTANCE}))
 
 		defer func() {
-			duration := time.Since(start)
-			histogram.With(prometheus.Labels{
-				"status": strconv.Itoa(http.StatusOK),
-				"instance": INSTANCE}).Observe(duration.Seconds())
-			counter.With(prometheus.Labels{"instance":INSTANCE}).Inc()
 
+			timer.ObserveDuration()
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
 
@@ -40,7 +36,7 @@ func HelloWorld(histogram *prometheus.HistogramVec, counter *prometheus.CounterV
 
 func main() {
 	histogram := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "hello_world_seconds",
+		Name: "hello_world_request_time",
 		Help: "Time taken to return hello world",
 	}, []string{"status", "instance"})
 
